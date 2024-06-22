@@ -65,3 +65,55 @@ app.post("/book", async (req, res) => {
 app.listen(port, () => {
   console.log(`listening on ${port}`);
 });
+
+//api to delete a book
+app.delete("/book/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Book.findByIdAndDelete(id); //returns null as del vaisakyo
+    res.status(200).json({
+      message: "Book Successfully deleted",
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+});
+
+//update a book
+app.patch("/book/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      bookName,
+      bookPrice,
+      authorName,
+      publishedAt,
+      publication,
+      isbnNumber,
+    } = req.body;
+
+    const updatedBook = await Book.findByIdAndUpdate(
+      id,
+      {
+        bookName,
+        bookPrice,
+        authorName,
+        publishedAt,
+        publication,
+        isbnNumber,
+      },
+      { new: true }
+    );
+    res.status(200).json({
+      message: "Book Updated Successfully",
+      data: updatedBook,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+});
