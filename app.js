@@ -1,18 +1,21 @@
 const express = require("express");
 const app = express();
+const fs = require("fs");
 
 const connectToDatabase = require("./database");
 const Book = require("./model/bookModel");
+const { upload } = require("./middleware/multerConfig");
 const port = 4000;
 
-app.use(express.json()); //express le chai by default json bujdaina -> req.body ma jun json auxa tyo express le bujdaina so tyo bujne power deko ho express lai you pc of code le
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 connectToDatabase();
 
-//get all books
+// Get all books
 app.get("/book", async (req, res) => {
   try {
-    const books = await Book.find(); //returns array
+    const books = await Book.find();
     res.status(200).json({
       message: "All Books Fetched Successfully",
       count: books.length,
@@ -20,57 +23,63 @@ app.get("/book", async (req, res) => {
     });
   } catch (error) {
     console.log({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
-//get a single book
+// Get a single book
 app.get("/book/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const singleBook = await Book.findById(id); //returns object
+    const singleBook = await Book.findById(id);
     res.status(200).json({
-      message: "Single Book Fetchec Successfully",
+      message: "Single Book Fetched Successfully",
       data: singleBook,
     });
   } catch (error) {
     console.log(error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
-//create/add a book
-app.post("/book", async (req, res) => {
-  console.log(req.body);
+// Create/add a book
+app.post("/book", upload.single("imagePath"), async (req, res) => {
   const { bookPrice, bookName, isbnNumber, authorName, publishedAt } = req.body;
+  const imagePath = req.file ? req.file.path : "uploads/no-mage.png";
+
   try {
     const book = await Book.create({
-      // mapping gareko left side ma field and right side ma respective value
-      // bookName:bookName,
-      // bookPrice:bookPrice,
-      // mathi mapping gareko ho, ya req.body ma jun field/key name haru airaxa that name chai hamro schema ko field name sanga match hunai parxa vanne xaina it can be anything but hamle ya same name haleko xam bcz js has this feature ki when schema ko field name ra req.body ma aune key name same xa vaye you can simply do the following:
       bookName,
       bookPrice,
       isbnNumber,
       authorName,
       publishedAt,
+      imagePath,
     });
+
     res.status(201).json({
       message: "Book created successfully",
       data: book,
     });
   } catch (error) {
     console.log({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.listen(port, () => {
-  console.log(`listening on ${port}`);
-});
-
-//api to delete a book
+// Delete a book
 app.delete("/book/:id", async (req, res) => {
+  const { id } = req.params;
+  const oldData = await Book.findById(id);
+  const oldPath = oldData.imagePath;
+  fs.unlink(`${oldPath}`, (err) => {
+    if (err) {
+      console.log(err);
+    }
+  });
+  console.log({ oldPath });
   try {
-    const { id } = req.params;
-    await Book.findByIdAndDelete(id); //returns null as del vaisakyo
+    await Book.findByIdAndDelete(id);
     res.status(200).json({
       message: "Book Successfully deleted",
     });
@@ -82,10 +91,23 @@ app.delete("/book/:id", async (req, res) => {
   }
 });
 
-//update a book
-app.patch("/book/:id", async (req, res) => {
+// Update a book
+app.patch("/book/:id", upload.single("imagePath"), async (req, res) => {
   try {
     const { id } = req.params;
+    const oldData = await Book.findById(id);
+    if (req.file) {
+      imagePath = req.file.path;
+    }
+    const oldDataPath = oldData.imagePath;
+    console.log({ oldDataPath });
+    fs.unlink(oldDataPath, (err) => {
+      if (err) {
+        console.log(err);
+      } else {
+        console.log(`${oldDataPath} deleted successfully`);
+      }
+    });
     const {
       bookName,
       bookPrice,
@@ -104,6 +126,7 @@ app.patch("/book/:id", async (req, res) => {
         publishedAt,
         publication,
         isbnNumber,
+        imagePath,
       },
       { new: true }
     );
@@ -116,4 +139,25 @@ app.patch("/book/:id", async (req, res) => {
       message: error.message,
     });
   }
+});
+
+// Add image
+app.post("/book/image", upload.single("avatar"), function (req, res, next) {
+  console.log({ file: req.file });
+  try {
+    res.status(200).json({
+      message: "Image Added Successfully",
+      data: req.file.path,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+});
+
+app.use(express.static("./uploads/")); //by default node wont give access to view images eg localhost:4000/a.jpg hit garey didaina so yo dina lai yo line haley dinxa
+
+app.listen(port, () => {
+  console.log(`listening on ${port}`);
 });

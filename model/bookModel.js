@@ -17,6 +17,9 @@ const bookSchema = new mongoose.Schema({
   publishedAt: {
     type: Date,
   },
+  imagePath: {
+    type: String,
+  },
 });
 
 const Book = mongoose.model("Book", bookSchema);
