@@ -1,102 +1,132 @@
-const express = require("express");
-const { MongoClient } = require("mongodb");
-require('dotenv').config();
+const express = require('express')
+const app =  express()
+const fs = require('fs')
+const connectToDatabase = require('./database')
+const Book = require('./model/bookModel')
+// multerconfig imports
+const {multer,storage} = require("./middleware/multerConfig")
+const upload = multer({storage : storage})
+ // Alternative 
+//  const app = require('express')()
 
-const app = express();
-const port = 9000;
+// cors package 
+const cors = require('cors')
 
-// Replace the URI with your MongoDB connection string
-const uri = process.env.URI;
-const dbName = process.env.DB_NAME;
 
-// Middleware to parse JSON bodies
-app.use(express.json());
+app.use(cors({
+    origin : "*"
+}))
 
-let client;
-let db;
+app.use(express.json())
 
-// Initialize database connection
-async function initializeDB() {
-  client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
-  await client.connect();
-  db = client.db(dbName);
-  console.log("Connected to database");
-}
 
-// Function to generate search conditions recursively
-function generateSearchConditions(obj, prefix = '') {
-  let conditions = [];
-  for (let key in obj) {
-    if (obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
-      conditions = conditions.concat(generateSearchConditions(obj[key], `${prefix}${key}.`));
-    } else {
-      conditions.push({ [`${prefix}${key}`]: { $regex: obj[key], $options: 'i' } });
+connectToDatabase()
+
+
+app.get("/",(req,res)=>{
+ 
+    res.status(200).json({
+        message : "Success"
+    })
+})
+
+// create book
+app.post("/book",upload.single("image") ,async(req,res)=>{
+
+    let fileName ;
+    if(!req.file){
+        fileName = "https://cdn.vectorstock.com/i/preview-1x/77/30/default-avatar-profile-icon-grey-photo-placeholder-vector-17317730.jpg"
+    }else{
+       fileName = "http://localhost:3000/" + req.file.filename
     }
-  }
-  return conditions;
-}
+   const {bookName,bookPrice,isbnNumber,authorName,publishedAt,publication} = req.body
+   await Book.create({
+        bookName,
+        bookPrice,
+        isbnNumber,
+        authorName,
+        publishedAt,
+        publication,
+        imageUrl : fileName
+       })
+   res.status(201).json({
+    message : "Book Created Successfully"
+   })
+})
 
-// Function to get an example document to understand the structure
-async function getExampleDocument(collection) {
-  const doc = await db.collection(collection).findOne();
-  return doc || {};
-}
+// all read
+app.get("/book",async (req,res)=>{
+    const books = await Book.find() // return array ma garxa 
+    res.status(200).json({
+        message : "Books fetched successfully",
+        data : books
+    })
+})
 
-// Function to search keyword in all collections
-async function searchKeyword(keyword) {
-  const collections = await db.listCollections().toArray();
-  const searchRegex = { $regex: keyword, $options: 'i' };
+// single read
+app.get("/book/:id",async(req,res)=>{
+    const id = req.params.id
+   const book = await Book.findById(id) // return object garxa
+   
+   if(!book) {
+    res.status(404).json({
+        message : "Nothing found"
+    })
+   }else{
+    res.status(200).json({
+        message : "Single Book Fetched Successfully",
+        data : book
+    })
+   }  
+})
 
-  const searchPromises = collections.map(async (collection) => {
-    const collectionName = collection.name;
-    console.log(`Searching in collection: ${collectionName}`);
-    try {
-      const exampleDoc = await getExampleDocument(collectionName);
-      const searchConditions = generateSearchConditions(exampleDoc, '');
-      if (searchConditions.length === 0) return { collectionName, docs: [] };
+//delete operation 
+app.delete("/book/:id",async(req,res)=>{
+    const id = req.params.id
+   await Book.findByIdAndDelete(id)
+   res.status(200).json({
+        message : "Book Deleted Successfully"
+   })
+})
 
-      const docs = await db.collection(collectionName).find({
-        $or: searchConditions
-      }).toArray();
-
-      if (docs.length > 0) {
-        console.log(`Found ${docs.length} documents in collection ${collectionName}`);
-      } else {
-        console.log(`No documents found in collection ${collectionName}`);
-      }
-
-      return { collectionName, docs };
-    } catch (error) {
-      console.log(`Error searching in collection ${collectionName}: ${error.message}`);
-      return { collectionName, docs: [] };
+// update operation 
+app.patch("/book/:id",upload.single('image'), async (req,res)=>{
+    const id = req.params.id // kun book update garney id ho yo
+    const {bookName,bookPrice,authorName,publishedAt,publication,isbnNumber} = req.body
+    const oldDatas = await Book.findById(id)
+    let fileName;
+    if(req.file){
+        
+        const oldImagePath = oldDatas.imageUrl
+        console.log(oldImagePath)
+        const localHostUrlLength = "http://localhost:3000/".length
+        const newOldImagePath = oldImagePath.slice(localHostUrlLength)
+        console.log(newOldImagePath)
+        fs.unlink(`storage/${newOldImagePath}`,(err)=>{
+            if(err){
+                console.log(err)
+            }else{
+                console.log("File Deleted Successfully")
+            }
+        })
+        fileName = "http://localhost:3000/" + req.file.filename
     }
-  });
+    await Book.findByIdAndUpdate(id,{
+        bookName : bookName,
+        bookPrice : bookPrice,
+        authorName : authorName,
+        publication : publication,
+        publishedAt : publishedAt,
+        isbnNumber : isbnNumber,
+        imageUrl : fileName
+    })
+    res.status(200).json({
+        message : "Book Updated Successfully"
+    })
+})
 
-  const resultsArray = await Promise.all(searchPromises);
+app.use(express.static("./storage/"))
 
-  const results = resultsArray.reduce((acc, { collectionName, docs }) => {
-    if (docs.length > 0) {
-      acc[collectionName] = docs;
-    }
-    return acc;
-  }, {});
-
-  return results;
-}
-
-// Endpoint to search keyword
-app.get("/search/:keyword", async (req, res) => {
-  const keyword = req.params.keyword;
-  try {
-    const results = await searchKeyword(keyword);
-    res.json({ count: Object.keys(results).length, results });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("Internal Server Error");
-  }
-});
-
-app.listen(port, async () => {
-  await initializeDB(); // Initialize the DB connection before starting the server
-  console.log(`Server is running on http://localhost:${port}`);
-});
+app.listen(3000,()=>{
+    console.log("Nodejs server has started at port 3000")
+})

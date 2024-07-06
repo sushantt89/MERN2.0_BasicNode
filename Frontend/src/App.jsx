@@ -1,6 +1,11 @@
-import "./App.css";
-function App() {
-  return <></>;
-}
+import React from "react";
+import RoutesLayout from "./routes/RoutesLayout";
+const App = () => {
+  return (
+    <>
+      <RoutesLayout />
+    </>
+  );
+};
 
 export default App;
